@@ -6,7 +6,7 @@ import reactivemongo.bson._
 import Types.Coll
 
 object $insert {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def apply[A: JsTubeInColl](doc: A): Funit =
     (implicitly[JsTube[A]] toMongo doc).fold(e => fufail(e.toString), apply(_))

@@ -2,7 +2,7 @@ package lila.team
 
 import org.joda.time.{ DateTime, Period }
 import play.api.libs.json.Json
-import play.modules.reactivemongo.json.ImplicitBSONHandlers.JsObjectWriter
+import reactivemongo.play.json._
 import reactivemongo.api._
 
 import lila.db.api._

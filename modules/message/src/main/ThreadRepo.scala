@@ -10,7 +10,7 @@ import lila.db.Implicits._
 import tube.threadTube
 
 object ThreadRepo {
-import play.modules.reactivemongo.json._
+import reactivemongo.play.json._
 
   type ID = String
 

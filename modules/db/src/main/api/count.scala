@@ -2,8 +2,7 @@ package lila.db
 package api
 
 import play.api.libs.json._
-import play.modules.reactivemongo.json.ImplicitBSONHandlers.JsObjectWriter
-import reactivemongo.core.commands.Count
+import reactivemongo.play.json._
 import Types._
 
 object $count {

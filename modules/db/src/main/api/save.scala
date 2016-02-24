@@ -5,7 +5,7 @@ import play.api.libs.json._
 import Types._
 
 object $save {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def apply[ID: Writes, A <: Identified[ID]: JsTubeInColl](doc: A): Funit =
     (implicitly[JsTube[A]] toMongo doc).fold(e => fufail(e.toString),

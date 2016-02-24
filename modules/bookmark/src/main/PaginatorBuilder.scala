@@ -1,7 +1,7 @@
 package lila.bookmark
 
 import play.api.libs.json._
-import play.modules.reactivemongo.json.ImplicitBSONHandlers._
+import reactivemongo.play.json._
 
 import lila.common.paginator._
 import lila.common.PimpedJson._

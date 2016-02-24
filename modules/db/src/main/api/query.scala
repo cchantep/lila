@@ -6,7 +6,7 @@ import reactivemongo.bson._
 import Types._
 
 object $query {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def all[A: InColl] = builder
 

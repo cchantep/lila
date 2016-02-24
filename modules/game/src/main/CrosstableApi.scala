@@ -1,7 +1,7 @@
 package lila.game
 
 import play.api.libs.json.JsObject
-import play.modules.reactivemongo.json.BSONFormats.toJSON
+import reactivemongo.play.json._
 import reactivemongo.bson.{ BSONDocument, BSONInteger }
 import reactivemongo.core.commands._
 

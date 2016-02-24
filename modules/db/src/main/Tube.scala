@@ -37,7 +37,7 @@ case class JsTube[Doc](
     with Reads[Doc]
     with Writes[Doc] {
 
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   implicit def reads(js: JsValue): JsResult[Doc] = reader reads js
   implicit def writes(doc: Doc): JsValue = writer writes doc

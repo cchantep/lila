@@ -22,7 +22,7 @@ class DateTest extends Specification with WithColl {
   )
 
   val date = DateTime.now
-  import play.modules.reactivemongo.json.ImplicitBSONHandlers._
+  import reactivemongo.play.json._
 
   "date conversion" should {
     "js to bson" in {

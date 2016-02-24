@@ -3,7 +3,7 @@ package lila.report
 import akka.actor.ActorSelection
 import org.joda.time.DateTime
 import play.api.libs.json._
-import play.modules.reactivemongo.json.ImplicitBSONHandlers._
+import reactivemongo.play.json._
 
 import lila.db.api._
 import lila.db.Implicits._

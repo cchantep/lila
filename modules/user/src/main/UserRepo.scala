@@ -3,8 +3,7 @@ package lila.user
 import com.roundeights.hasher.Implicits._
 import org.joda.time.DateTime
 import play.api.libs.json._
-import play.modules.reactivemongo.json.BSONFormats.toJSON
-import play.modules.reactivemongo.json.ImplicitBSONHandlers.JsObjectWriter
+import reactivemongo.play.json._
 import reactivemongo.api._
 import reactivemongo.bson._
 
@@ -285,15 +284,18 @@ trait UserRepo {
   def setLang(id: ID, lang: String) = $update.field(id, "lang", lang)
 
   def idsSumToints(ids: Iterable[String]): Fu[Int] = ids.isEmpty ? fuccess(0) | {
-    import reactivemongo.core.commands._
-    val command = Aggregate(userTube.coll.name, Seq(
+    val BatchCommands = userTube.coll.BatchCommands
+    import BatchCommands.AggregationFramework.{ Aggregate, Group, Match, SumField }
+
+    val pipeline = Seq(
       Match(BSONDocument("_id" -> BSONDocument("$in" -> ids))),
       Group(BSONBoolean(true))(F.toints -> SumField(F.toints))
-    ))
-    userTube.coll.db.command(command) map { stream =>
-      stream.toList.headOption flatMap { obj =>
-        toJSON(obj).asOpt[JsObject]
-      } flatMap { _ int F.toints }
+    )
+
+    userTube.coll.aggregate(
+      Match(BSONDocument("_id" -> BSONDocument("$in" -> ids))),
+      List(Group(BSONBoolean(true))(F.toints -> SumField(F.toints)))) map {
+      _.head[JsObject].headOption flatMap { _ int F.toints }
     } map (~_)
   }
 

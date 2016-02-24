@@ -6,8 +6,7 @@ import chess.format.Forsyth
 import chess.{ Color, Status }
 import org.joda.time.DateTime
 import play.api.libs.json._
-import play.modules.reactivemongo.json.BSONFormats.toJSON
-import play.modules.reactivemongo.json.ImplicitBSONHandlers.JsObjectWriter
+import reactivemongo.play.json._
 import reactivemongo.bson.{ BSONDocument, BSONArray, BSONBinary, BSONInteger }
 
 import lila.common.PimpedJson._

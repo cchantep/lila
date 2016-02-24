@@ -7,7 +7,7 @@ import ornicar.scalalib.Random
 import play.api.libs.json._
 import play.api.mvc.Results.Redirect
 import play.api.mvc.{ RequestHeader, Handler, Action, Cookies }
-import play.modules.reactivemongo.json.ImplicitBSONHandlers._
+import reactivemongo.play.json._
 import spray.caching.{ LruCache, Cache }
 
 import lila.common.LilaCookie

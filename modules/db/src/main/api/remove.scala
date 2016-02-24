@@ -5,7 +5,7 @@ import play.api.libs.json._
 import Types._
 
 object $remove {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def apply[A: InColl](selector: JsObject): Funit =
     implicitly[InColl[A]].coll remove selector void

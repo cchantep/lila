@@ -6,7 +6,7 @@ import play.api.libs.json._
 import reactivemongo.bson._
 
 object $primitive {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def apply[A: InColl, B](
     query: JsObject,

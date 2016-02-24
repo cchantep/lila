@@ -58,7 +58,7 @@ object Entry {
     }
   }
 
-  import play.modules.reactivemongo.json.ImplicitBSONHandlers._
+  import reactivemongo.play.json._
   import lila.db.BSON.BSONJodaDateTimeHandler
   import reactivemongo.bson.Macros
   implicit val EntryBSONHandler = Macros.handler[Entry]

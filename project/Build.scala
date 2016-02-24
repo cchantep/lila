@@ -113,7 +113,7 @@ object ApplicationBuild extends Build {
   )
 
   lazy val db = project("db", Seq(common)).settings(
-    libraryDependencies ++= provided(play.test, play.api, RM, PRM)
+    libraryDependencies ++= provided(play.test, play.api, RM, RMI, PRM)
   )
 
   lazy val memo = project("memo", Seq(common, db)).settings(

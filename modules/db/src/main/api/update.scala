@@ -6,7 +6,7 @@ import reactivemongo.bson._
 import Types._
 
 object $update {
-  import play.modules.reactivemongo.json._
+  import reactivemongo.play.json._
 
   def apply[ID: Writes, A <: Identified[ID]: JsTubeInColl](doc: A): Funit =
     (implicitly[JsTube[A]] toMongo doc).fold(e => fufail(e.toString),

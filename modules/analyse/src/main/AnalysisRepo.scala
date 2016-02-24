@@ -2,7 +2,7 @@ package lila.analyse
 
 import org.joda.time.DateTime
 import play.api.libs.json.Json
-import play.modules.reactivemongo.json.ImplicitBSONHandlers.JsObjectWriter
+import reactivemongo.play.json._
 
 import lila.db.api._
 import lila.db.Implicits._
