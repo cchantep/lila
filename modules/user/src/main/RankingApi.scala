@@ -9,7 +9,7 @@ import reactivemongo.api.ReadPreference
 import reactivemongo.bson._
 import scala.concurrent.duration._
 
-import lila.db.BSON.MapValue.MapHandler
+//import lila.db.BSON.MapValue.MapHandler
 import lila.db.dsl._
 import lila.memo.{ AsyncCache, MongoCache }
 import lila.rating.{ Perf, PerfType }
@@ -110,7 +110,7 @@ final class RankingApi(
     // from 800 to 2500 by Stat.group
     private def compute(perfId: Perf.ID): Fu[List[NbUsers]] =
       lila.rating.PerfType(perfId).exists(lila.rating.PerfType.leaderboardable.contains) ?? {
-        coll.aggregate(
+        coll.aggregatorContext[BSONDocument](
           Match($doc("perf" -> perfId)),
           List(Project($doc(
             "_id" -> false,
@@ -122,17 +122,19 @@ final class RankingApi(
             )
           )),
             GroupField("r")("nb" -> SumValue(1))
-          )).map { res =>
-            val hash = res.firstBatch.flatMap { obj =>
+          )).prepared.cursor.collect[List](
+          -1, Cursor.FailOnError[List[BSONDocument]]()).map { res =>
+            val hash = res.flatMap { obj =>
               for {
                 rating <- obj.getAs[Int]("_id")
                 nb <- obj.getAs[NbUsers]("nb")
               } yield rating -> nb
             }.toMap
+
             (800 to 2800 by Stat.group).map { r =>
               hash.getOrElse(r, 0)
             }.toList
-          }
+        }
       }
   }
 }

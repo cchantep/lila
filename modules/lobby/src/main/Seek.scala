@@ -96,7 +96,6 @@ object Seek {
     createdAt = DateTime.now)
 
   import reactivemongo.bson.Macros
-  import lila.db.BSON.MapValue.MapHandler
   import lila.db.BSON.BSONJodaDateTimeHandler
   private[lobby] implicit val lobbyUserBSONHandler = Macros.handler[LobbyUser]
   private[lobby] implicit val seekBSONHandler = Macros.handler[Seek]

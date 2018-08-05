@@ -42,7 +42,7 @@ sealed abstract class PostRepo(troll: Boolean) {
     ).sort($sort.createdDesc).cursor[Post]().gather[List](nb)
 
   def removeByTopic(topicId: String): Funit =
-    coll.remove(selectTopic(topicId)).void
+    coll.delete(ordered = false).one(selectTopic(topicId)).void
 
   def hideByTopic(topicId: String, value: Boolean): Funit = coll.update(
     selectTopic(topicId),

@@ -28,6 +28,8 @@ private[round] final class Titivate(
 
   def scheduleNext = scheduler.scheduleOnce(5 seconds, self, Run)
 
+  import reactivemongo.play.iteratees.cursorProducer
+
   def receive = {
 
     case ReceiveTimeout =>
@@ -36,8 +38,7 @@ private[round] final class Titivate(
       throw new RuntimeException(msg)
 
     case Run => GameRepo.count(_.checkable).flatMap { total =>
-      GameRepo.cursor(Query.checkable)
-        .enumerate(1000, stopOnError = false)
+      GameRepo.cursor(Query.checkable).enumerator(1000)
         .|>>>(Iteratee.foldM[Game, Int](0) {
           case (count, game) => {
 

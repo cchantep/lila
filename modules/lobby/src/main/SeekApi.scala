@@ -1,7 +1,7 @@
 package lila.lobby
 
 import org.joda.time.DateTime
-import reactivemongo.core.commands._
+import reactivemongo.bson.BSONDocument
 import scala.concurrent.duration._
 
 import actorApi.LobbyUser
@@ -69,24 +69,22 @@ final class SeekApi(
       .sort($doc("createdAt" -> -1))
       .cursor[Seek]().gather[List]()
 
-  def remove(seek: Seek) =
-    coll.remove($doc("_id" -> seek.id)).void >> cache.clear
+  def remove(seek: Seek) = coll.delete[BSONDocument](false).
+    one($doc("_id" -> seek.id)).void >> cache.clear
 
   def archive(seek: Seek, gameId: String) = {
     val archiveDoc = Seek.seekBSONHandler.write(seek) ++ $doc(
       "gameId" -> gameId,
       "archivedAt" -> DateTime.now)
-    coll.remove($doc("_id" -> seek.id)).void >>
-      cache.clear >>
-      archiveColl.insert(archiveDoc)
+
+    coll.delete[BSONDocument](false).one($doc("_id" -> seek.id)).void >>
+      cache.clear >> archiveColl.insert(archiveDoc)
   }
 
   def findArchived(gameId: String): Fu[Option[Seek]] =
     archiveColl.find($doc("gameId" -> gameId)).uno[Seek]
 
   def removeBy(seekId: String, userId: String) =
-    coll.remove($doc(
-      "_id" -> seekId,
-      "user.id" -> userId
-    )).void >> cache.clear
+    coll.delete[BSONDocument](false).
+      one($doc("_id" -> seekId, "user.id" -> userId)).void >> cache.clear
 }

@@ -40,26 +40,29 @@ private final class AggregationPipeline {
   private val sampleGames = Sample(10 * 1000)
   private val sortDate = Sort(Descending(F.date))
   private val sampleMoves = Sample(200 * 1000).some
-  private val unwindMoves = Unwind(F.moves).some
+  private val unwindMoves = UnwindField(F.moves).some
   private val sortNb = Sort(Descending("nb")).some
   private def limit(nb: Int) = Limit(nb).some
   private def group(d: Dimension[_], f: GroupFunction) = Group(dimensionGroupId(d))(
     "v" -> f,
     "nb" -> SumValue(1),
-    "ids" -> AddToSet("_id")
+    "ids" -> AddToSet(BSONString(f"$$_id"))
   ).some
+
   private def groupMulti(d: Dimension[_], metricDbKey: String) = Group($doc(
     "dimension" -> dimensionGroupId(d),
     "metric" -> ("$" + metricDbKey)))(
     "v" -> SumValue(1),
-    "ids" -> AddToSet("_id")
+    "ids" -> AddToSet(BSONString(f"$$_id"))
   ).some
+
   private val regroupStacked = GroupField("_id.dimension")(
     "nb" -> SumField("v"),
-    "ids" -> First("ids"),
-    "stack" -> PushMulti(
+    "ids" -> First(BSONString(f"$$ids")),
+    "stack" -> Push(BSONDocument(
       "metric" -> "_id.metric",
-      "v" -> "v")).some
+      "v" -> "v"))).some
+
   private val sliceIds = Project($doc(
     "_id" -> true,
     "v" -> true,
@@ -78,15 +81,17 @@ private final class AggregationPipeline {
     val gameMatcher = combineDocs(question.filters.collect {
       case f if f.dimension.isInGame => f.matcher
     })
+
     def matchMoves(extraMatcher: Bdoc = $empty) =
       combineDocs(extraMatcher :: question.filters.collect {
         case f if f.dimension.isInMove => f.matcher
       }).some.filterNot(_.isEmpty) map Match
+
     def projectForMove = Project($doc({
       metric.dbKey :: dimension.dbKey :: filters.collect {
         case Filter(d, _) if d.isInMove => d.dbKey
       }
-    }.distinct.map(_ -> BSONBoolean(true)))).some
+    }.distinct.map(BSONElement(_, BSONBoolean(true))))).some
 
     NonEmptyList.nel[PipelineOperator](
       Match(
@@ -104,7 +109,7 @@ private final class AggregationPipeline {
           unwindMoves,
           matchMoves(),
           sampleMoves,
-          group(dimension, Avg(F.moves("c"))),
+          group(dimension, Avg(BSONString('$' + F.moves("c")))),
           sliceIds
         )
         case M.Material => List(
@@ -112,7 +117,7 @@ private final class AggregationPipeline {
           unwindMoves,
           matchMoves(),
           sampleMoves,
-          group(dimension, Avg(F.moves("i"))),
+          group(dimension, Avg(BSONString('$' + F.moves("i")))),
           sliceIds
         )
         case M.Opportunism => List(
@@ -121,7 +126,7 @@ private final class AggregationPipeline {
           matchMoves($doc(F.moves("o") -> $doc("$exists" -> true))),
           sampleMoves,
           group(dimension, GroupFunction("$push", $doc(
-            "$cond" -> $arr("$" + F.moves("o"), 1, 0)
+            "$cond" -> $arr('$' + F.moves("o"), 1, 0)
           ))),
           sliceIds,
           Project($doc(
@@ -177,11 +182,11 @@ private final class AggregationPipeline {
           sliceIds
         )
         case M.RatingDiff => List(
-          group(dimension, Avg(F.ratingDiff)),
+          group(dimension, Avg(BSONString('$' + F.ratingDiff))),
           sliceIds
         )
         case M.OpponentRating => List(
-          group(dimension, Avg(F.opponentRating)),
+          group(dimension, Avg(BSONString('$' + F.opponentRating))),
           sliceIds
         )
         case M.Result => List(

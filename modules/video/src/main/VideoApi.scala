@@ -1,9 +1,10 @@
 package lila.video
 
 import org.joda.time.DateTime
-import reactivemongo.api.ReadPreference
+
+import reactivemongo.api.{ Cursor, ReadPreference }
 import reactivemongo.bson._
-import reactivemongo.core.commands._
+
 import scala.concurrent.duration._
 
 import lila.common.paginator._
@@ -178,11 +179,12 @@ private[video] final class VideoApi(
           if (filterTags.isEmpty) allPopular map { tags =>
             tags.filterNot(_.isNumeric)
           }
-          else videoColl.aggregate(
+          else videoColl.aggregatorContext[TagNb](
             Match($doc("tags" $all filterTags)),
             List(Project($doc("tags" -> true)),
-              Unwind("tags"), GroupField("tags")("nb" -> SumValue(1)))).map(
-              _.firstBatch.flatMap(_.asOpt[TagNb]))
+              Unwind("tags"), GroupField("tags")("nb" -> SumValue(1)))).
+            prepared.cursor.collect[List](
+              -1, Cursor.FailOnError[List[TagNb]]())
 
         allPopular zip allPaths map {
           case (all, paths) =>
@@ -204,11 +206,11 @@ private[video] final class VideoApi(
       maxCapacity = 100)
 
     private val popularCache = AsyncCache.single[List[TagNb]](
-      f = videoColl.aggregate(
+      f = videoColl.aggregatorContext[TagNb](
         Project($doc("tags" -> true)), List(
           Unwind("tags"), GroupField("tags")("nb" -> SumValue(1)),
-          Sort(Descending("nb")))).map(
-          _.firstBatch.flatMap(_.asOpt[TagNb])),
+          Sort(Descending("nb")))).prepared.cursor.collect[List](
+        -1, Cursor.FailOnError[List[TagNb]]()),
       timeToLive = 1.day)
   }
 }

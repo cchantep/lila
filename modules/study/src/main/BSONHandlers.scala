@@ -206,7 +206,7 @@ private object BSONHandlers {
   implicit val ChapterBSONHandler = Macros.handler[Chapter]
   implicit val ChapterMetadataBSONHandler = Macros.handler[Chapter.Metadata]
 
-  private implicit val ChaptersMap = BSON.MapDocument.MapHandler[Chapter]
+  //private implicit val ChaptersMap = BSON.MapDocument.MapHandler[Chapter]
 
   implicit val PositionRefBSONHandler = new BSONHandler[BSONString, Position.Ref] {
     def read(b: BSONString) = Position.Ref.decode(b.value) err s"Invalid position ${b.value}"
@@ -222,12 +222,19 @@ private object BSONHandlers {
     def write(x: StudyMember) = DbMemberBSONHandler write DbMember(x.role, x.addedAt)
   }
   private[study] implicit val MembersBSONHandler = new BSONHandler[Bdoc, StudyMembers] {
-    private val mapHandler = BSON.MapDocument.MapHandler[DbMember]
+    private val mapHandler =
+      implicitly[BSONHandler[BSONDocument, Map[String, DbMember]]]
+
     def read(b: Bdoc) = StudyMembers(mapHandler read b map {
-      case (id, dbMember) => id -> StudyMember(id, dbMember.role, dbMember.addedAt)
+      case (id, dbMember) =>
+        id -> StudyMember(id, dbMember.role, dbMember.addedAt)
     })
-    def write(x: StudyMembers) = $doc(x.members.mapValues(StudyMemberBSONWriter.write))
+
+    def write(x: StudyMembers) = mapHandler.write(x.members.mapValues {
+      case StudyMember(_, role, addedAt) => DbMember(role, addedAt)
+    })
   }
+
   import Study.Visibility
   private[study] implicit val VisibilityHandler: BSONHandler[BSONString, Visibility] = new BSONHandler[BSONString, Visibility] {
     def read(bs: BSONString) = Visibility.byKey get bs.value err s"Invalid visibility ${bs.value}"

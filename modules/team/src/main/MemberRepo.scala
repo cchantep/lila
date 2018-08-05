@@ -21,10 +21,10 @@ object MemberRepo {
     coll.distinct[String, Set]("team", $doc("user" -> userId).some)
 
   def removeByteam(teamId: ID): Funit =
-    coll.remove(teamQuery(teamId)).void
+    coll.delete[ID](false).one(teamQuery(teamId)).void
 
   def removeByUser(userId: ID): Funit =
-    coll.remove(userQuery(userId)).void
+    coll.delete[ID](false).one(userQuery(userId)).void
 
   def exists(teamId: ID, userId: ID): Fu[Boolean] =
     coll.exists(selectId(teamId, userId))
@@ -33,7 +33,7 @@ object MemberRepo {
     coll.insert(Member.make(team = teamId, user = userId)).void
 
   def remove(teamId: String, userId: String): Funit =
-    coll.remove(selectId(teamId, userId)).void
+    coll.delete[BSONDocument](false).one(selectId(teamId, userId)).void
 
   def countByTeam(teamId: String): Fu[Int] =
     coll.countSel(teamQuery(teamId))

@@ -5,14 +5,14 @@ import reactivemongo.bson._
 
 object AggregationClusters {
 
-  def apply[X](question: Question[X], res: AggregationResult): List[Cluster[X]] =
+  def apply[X](question: Question[X], res: List[BSONDocument]): List[Cluster[X]] =
     postSort(question) {
       if (Metric isStacked question.metric) stacked(question, res)
       else single(question, res)
     }
 
-  private def single[X](question: Question[X], res: AggregationResult): List[Cluster[X]] =
-    res.firstBatch.flatMap { doc =>
+  private def single[X](question: Question[X], res: List[BSONDocument]): List[Cluster[X]] =
+    res.flatMap { doc =>
       for {
         x <- doc.getAs[X]("_id")(question.dimension.bson)
         value <- doc.getAs[BSONNumberLike]("v")
@@ -24,8 +24,8 @@ object AggregationClusters {
   private case class StackEntry(metric: BSONValue, v: BSONNumberLike)
   private implicit val StackEntryBSONReader = Macros.reader[StackEntry]
 
-  private def stacked[X](question: Question[X], res: AggregationResult): List[Cluster[X]] =
-    res.firstBatch.flatMap { doc =>
+  private def stacked[X](question: Question[X], res: List[BSONDocument]): List[Cluster[X]] =
+    res.flatMap { doc =>
       val metricValues = Metric valuesOf question.metric
       // println(lila.db.BSON debug doc)
       for {

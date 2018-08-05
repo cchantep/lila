@@ -5,7 +5,9 @@ import scala.concurrent.duration._
 import actorApi._
 import akka.actor._
 import org.joda.time.DateTime
+
 import reactivemongo.bson._
+import reactivemongo.api.commands.GetLastError
 
 import lila.db.BSON.BSONJodaDateTimeHandler
 import lila.db.dsl._
@@ -86,12 +88,15 @@ private[round] object History {
       case _ =>
     }
 
-  private def persist(coll: Coll, gameId: String)(vevs: List[VersionedEvent]) {
-    if (vevs.nonEmpty) coll.uncheckedUpdate(
-      $doc("_id" -> gameId),
-      $doc(
+  private def persist(coll: Coll, gameId: String)(
+    vevs: List[VersionedEvent]): Unit = if (vevs.isEmpty) {} else {
+    coll.update(true, GetLastError.Unacknowledged).one(
+      q = $doc("_id" -> gameId),
+      u = $doc(
         "$set" -> $doc("e" -> vevs.reverse),
         "$setOnInsert" -> $doc("d" -> DateTime.now)),
-      upsert = true)
+      upsert = true, multi = false)
+
+    ()
   }
 }

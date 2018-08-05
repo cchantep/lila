@@ -5,8 +5,10 @@ import lila.memo._
 import lila.user.{ User, UserRepo }
 
 import org.joda.time.DateTime
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
 import scala.concurrent.duration._
+
+import reactivemongo.bson.BSONDocument
+import reactivemongo.api.Cursor
 
 final class PlanApi(
     stripeClient: StripeClient,
@@ -227,14 +229,19 @@ final class PlanApi(
     chargeColl.find($doc("userId" -> user.id)).sort($doc("date" -> -1)).list[Charge]()
 
   private val topPatronUserIdsCache = AsyncCache[Int, List[User.ID]](
-    f = nb => chargeColl.aggregate(
-      Match($doc("userId" $exists true)), List(
-        GroupField("userId")("total" -> SumField("cents")),
-        Sort(Descending("total")),
-        Limit(nb))).map {
-        _.firstBatch.flatMap { _.getAs[User.ID]("_id") }
-      } flatMap filterUserIds,
-    timeToLive = 1 hour)
+    f = { nb =>
+      chargeColl.aggregateWith[BSONDocument]() { agg =>
+        import agg._ // aggregation stage
+
+        Match($doc("userId" $exists true)) -> List(
+          GroupField("userId")("total" -> SumField("cents")),
+          Sort(Descending("total")),
+          Limit(nb))
+      }.collect[List](nb, Cursor.FailOnError[List[BSONDocument]]()).map {
+        _.flatMap { _.getAs[User.ID]("_id") }
+      }.flatMap(filterUserIds)
+    },
+    timeToLive = 1.hour)
 
   def topPatronUserIds(nb: Int): Fu[List[User.ID]] = topPatronUserIdsCache(nb)
 

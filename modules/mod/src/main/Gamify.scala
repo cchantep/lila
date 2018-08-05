@@ -2,7 +2,8 @@ package lila.mod
 
 import lila.db.BSON.BSONJodaDateTimeHandler
 import org.joda.time.DateTime
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
+
+import reactivemongo.api.Cursor
 import reactivemongo.bson._
 import scala.concurrent.duration._
 
@@ -78,29 +79,37 @@ final class Gamify(
   private val notLichess = $doc("$ne" -> "lichess")
 
   private def actionLeaderboard(after: DateTime, before: Option[DateTime]): Fu[List[ModCount]] =
-    logColl.aggregate(Match($doc(
-      "date" -> dateRange(after, before),
-      "mod" -> notLichess
-    )), List(
-      GroupField("mod")("nb" -> SumValue(1)),
-      Sort(Descending("nb")))).map {
-      _.firstBatch.flatMap { obj =>
+    logColl.aggregateWith[BSONDocument]() { agg =>
+      import agg._
+
+      Match($doc(
+        "date" -> dateRange(after, before),
+        "mod" -> notLichess
+      )) -> List(
+        GroupField("mod")("nb" -> SumValue(1)),
+        Sort(Descending("nb")))
+
+    }.collect[List](-1, Cursor.FailOnError[List[BSONDocument]]()).map {
+      _.flatMap { obj =>
         obj.getAs[String]("_id") |@| obj.getAs[Int]("nb") apply ModCount.apply
       }
     }
 
   private def reportLeaderboard(after: DateTime, before: Option[DateTime]): Fu[List[ModCount]] =
-    reportColl.aggregate(
+    reportColl.aggregateWith[BSONDocument]() { agg =>
+      import agg._
+
       Match($doc(
         "createdAt" -> dateRange(after, before),
         "processedBy" -> notLichess
-      )), List(
+      )) -> List(
         GroupField("processedBy")("nb" -> SumValue(1)),
-        Sort(Descending("nb")))).map {
-        _.firstBatch.flatMap { obj =>
-          obj.getAs[String]("_id") |@| obj.getAs[Int]("nb") apply ModCount.apply
-        }
+        Sort(Descending("nb")))
+    }.collect[List](-1, Cursor.FailOnError[List[BSONDocument]]()).map {
+      _.flatMap { obj =>
+        obj.getAs[String]("_id") |@| obj.getAs[Int]("nb") apply ModCount.apply
       }
+    }
 }
 
 object Gamify {

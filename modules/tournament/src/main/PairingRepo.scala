@@ -2,8 +2,9 @@ package lila.tournament
 
 import org.joda.time.DateTime
 import play.api.libs.iteratee._
+
+import reactivemongo.api.Cursor
 import reactivemongo.bson._
-import reactivemongo.core.commands._
 
 import BSONHandlers._
 import lila.db.dsl._
@@ -13,8 +14,11 @@ object PairingRepo {
   private lazy val coll = Env.current.pairingColl
 
   private def selectId(id: String) = $doc("_id" -> id)
+
   def selectTour(tourId: String) = $doc("tid" -> tourId)
+
   def selectUser(userId: String) = $doc("u" -> userId)
+
   private def selectTourUser(tourId: String, userId: String) = $doc(
     "tid" -> tourId,
     "u" -> userId)
@@ -72,22 +76,25 @@ object PairingRepo {
   def count(tourId: String): Fu[Int] =
     coll.count(selectTour(tourId).some)
 
-  def countByTourIdAndUserIds(tourId: String): Fu[Map[String, Int]] = {
-    import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
-    coll.aggregate(
-      Match(selectTour(tourId)),
-      List(
+  def countByTourIdAndUserIds(tourId: String): Fu[Map[String, Int]] =
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._ // aggregation stages
+
+      Match(selectTour(tourId)) -> List(
         Project($doc("u" -> true, "_id" -> false)),
-        Unwind("u"),
+        UnwindField("u"),
         GroupField("u")("nb" -> SumValue(1))
-      )).map {
-        _.firstBatch.flatMap { doc =>
-          doc.getAs[String]("_id") flatMap { uid =>
-            doc.getAs[Int]("nb") map { uid -> _ }
-          }
-        }.toMap
-      }
-  }
+      )
+    }.collect[List](-1, Cursor.FailOnError[List[BSONDocument]]()).map { l =>
+      val m: Map[String, Int] = l.flatMap({ doc =>
+        for {
+          uid <- doc.getAs[String]("_id")
+          nb <- doc.getAs[Int]("nb")
+        } yield uid -> nb
+      })(scala.collection.breakOut)
+
+      m
+    }
 
   def removePlaying(tourId: String) = coll.remove(selectTour(tourId) ++ selectPlaying).void
 
@@ -125,18 +132,25 @@ object PairingRepo {
       $set(field -> value)).void
   }
 
-  import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework, AggregationFramework.{ AddToSet, Group, Match, Project, Push, Unwind }
-
   def playingUserIds(tour: Tournament): Fu[Set[String]] =
-    coll.aggregate(Match(selectTour(tour.id) ++ selectPlaying), List(
-      Project($doc("u" -> true, "_id" -> false)),
-      Unwind("u"), Group(BSONBoolean(true))("ids" -> AddToSet("u")))).map(
-      _.firstBatch.headOption.flatMap(_.getAs[Set[String]]("ids")).
-        getOrElse(Set.empty[String]))
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._
+
+      Match(selectTour(tour.id) ++ selectPlaying) -> List(
+        Project($doc("u" -> true, "_id" -> false)),
+        UnwindField("u"), Group(BSONBoolean(true))(
+          "ids" -> AddToSet(BSONString(f"$$u"))))
+    }.head.map {
+      _.getAs[Set[String]]("ids") getOrElse Set.empty[String]
+    }
 
   def playingGameIds(tourId: String): Fu[List[String]] =
-    coll.aggregate(Match(selectTour(tourId) ++ selectPlaying), List(
-      Group(BSONBoolean(true))("ids" -> Push("_id")))).map(
-      _.firstBatch.headOption.flatMap(_.getAs[List[String]]("ids")).
-        getOrElse(List.empty[String]))
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._
+
+      Match(selectTour(tourId) ++ selectPlaying) -> List(
+        Group(BSONBoolean(true))("ids" -> Push(BSONString(f"$$_id"))))
+    }.head.map {
+      _.getAs[List[String]]("ids") getOrElse List.empty[String]
+    }
 }

@@ -1,8 +1,12 @@
 package lila.study
 
 import org.joda.time.DateTime
-import reactivemongo.api.Cursor
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework.{ Project, Match }
+
+import reactivemongo.bson.BSONDocument
+
+import reactivemongo.api.{ Cursor, CursorProducer }
+import reactivemongo.api.commands.GetLastError
+
 import scala.concurrent.duration._
 
 import lila.db.dsl._
@@ -22,7 +26,7 @@ final class StudyRepo(private[study] val coll: Coll) {
 
   def byOrderedIds(ids: Seq[String]) = coll.byOrderedIds[Study](ids)(_.id)
 
-  def cursor(selector: Bdoc) = coll.find(selector).cursor[Study]()
+  def cursor(selector: Bdoc)(implicit cp: CursorProducer[Study]): cp.ProducedCursor = coll.find(selector).cursor[Study]()
 
   def nameById(id: Study.ID) = coll.primitiveOne[String]($id(id), "name")
 
@@ -65,10 +69,20 @@ final class StudyRepo(private[study] val coll: Coll) {
         "updatedAt" -> DateTime.now)
     ).void
 
-  def incViews(study: Study) = coll.incFieldUnchecked($id(study.id), "views")
+  def incViews(study: Study): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(study.id), u = $inc("views" -> 1), upsert = false, multi = false)
 
-  def updateNow(s: Study) =
-    coll.updateFieldUnchecked($id(s.id), "updatedAt", DateTime.now)
+    ()
+  }
+
+  def updateNow(s: Study): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(s.id), u = $set("updatedAt" -> DateTime.now),
+      upsert = false, multi = false)
+
+    ()
+  }
 
   def addMember(study: Study, member: StudyMember): Funit =
     coll.update(
@@ -125,19 +139,18 @@ final class StudyRepo(private[study] val coll: Coll) {
       else $pull("likers" -> userId)
     ).void
 
-  private def countLikes(studyId: Study.ID): Fu[Option[(Study.Likes, DateTime)]] =
-    coll.aggregate(
-      Match($id(studyId)),
-      List(Project($doc(
-        "_id" -> false,
-        "likes" -> $doc("$size" -> "$likers"),
-        "createdAt" -> true
-      )))
-    ).map { res =>
-        for {
-          doc <- res.firstBatch.headOption
-          likes <- doc.getAs[Study.Likes]("likes")
-          createdAt <- doc.getAs[DateTime]("createdAt")
-        } yield likes -> createdAt
-      }
+  private def countLikes(studyId: Study.ID): Fu[Option[(Study.Likes, DateTime)]] = coll.aggregateWith[BSONDocument]() { agg =>
+    import agg.{ Match, Project }
+
+    Match($id(studyId)) -> List(Project($doc(
+      "_id" -> false,
+      "likes" -> $doc("$size" -> "$likers"),
+      "createdAt" -> true
+    )))
+  }.head.map { doc =>
+    for {
+      likes <- doc.getAs[Study.Likes]("likes")
+      createdAt <- doc.getAs[DateTime]("createdAt")
+    } yield likes -> createdAt
+  }
 }

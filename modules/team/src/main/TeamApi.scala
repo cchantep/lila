@@ -7,6 +7,8 @@ import lila.hub.actorApi.forum.MakeTeam
 import lila.hub.actorApi.timeline.{ Propagate, TeamJoin, TeamCreate }
 import lila.user.{ User, UserRepo, UserContext }
 import org.joda.time.Period
+
+import reactivemongo.bson.BSONDocument
 import reactivemongo.api.Cursor
 
 final class TeamApi(
@@ -106,7 +108,7 @@ final class TeamApi(
     }
 
   def processRequest(team: Team, request: Request, accept: Boolean): Funit = for {
-    _ ← coll.request.remove(request)
+    _ ← coll.request.delete[Request](false).one(request)
     _ ← cached.nbRequests remove team.createdBy
     userOption ← UserRepo byId request.user
     _ ← userOption.filter(_ => accept).??(user =>
@@ -147,7 +149,7 @@ final class TeamApi(
 
   // delete for ever, with members but not forums
   def delete(team: Team): Funit =
-    coll.team.remove($id(team.id)) >>
+    coll.team.delete[BSONDocument](false).one($id(team.id)) >>
       MemberRepo.removeByteam(team.id) >>-
       (indexer ! RemoveTeam(team.id))
 

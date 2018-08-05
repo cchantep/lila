@@ -18,11 +18,6 @@ final class PrefApi(
   private val cache = AsyncCache(fetchPref, timeToLive = cacheTtl)
 
   private implicit val prefBSONHandler = new BSON[Pref] {
-
-    import lila.db.BSON.MapValue.{ MapReader, MapWriter }
-    implicit val tagsReader = MapReader[String]
-    implicit val tagsWriter = MapWriter[String]
-
     def reads(r: BSON.Reader): Pref = Pref(
       _id = r str "_id",
       dark = r.getD("dark", Pref.default.dark),

@@ -2,7 +2,10 @@ package lila.tournament
 
 import org.joda.time.DateTime
 import play.api.libs.iteratee._
+
 import reactivemongo.bson._
+import reactivemongo.api.Cursor
+
 import scala.concurrent.duration._
 
 import lila.common.Maths
@@ -17,7 +20,7 @@ final class LeaderboardApi(
     coll: Coll,
     maxPerPage: Int) {
 
-  import LeaderboardApi._
+  import LeaderboardApi.{ ChartData, Entry, TourEntry }
   import BSONHandlers._
 
   def recentByUser(user: User, page: Int) = paginator(user, page, $doc("d" -> -1))
@@ -25,25 +28,26 @@ final class LeaderboardApi(
   def bestByUser(user: User, page: Int) = paginator(user, page, $doc("w" -> 1))
 
   def chart(user: User): Fu[ChartData] = {
-    import reactivemongo.bson._
-    import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
-    coll.aggregate(
-      Match($doc("u" -> user.id)),
-      List(GroupField("v")("nb" -> SumValue(1), "points" -> Push("s"), "ratios" -> Push("w")))
-    ).map {
-        _.firstBatch map leaderboardAggregationResultBSONHandler.read
-      }.map { aggs =>
-        ChartData {
-          aggs.flatMap { agg =>
-            PerfType.byId get agg._id map {
-              _ -> ChartData.PerfResult(
-                nb = agg.nb,
-                points = ChartData.Ints(agg.points),
-                rank = ChartData.Ints(agg.ratios))
-            }
-          }.sortLike(PerfType.leaderboardable, _._1)
+    coll.aggregateWith[ChartData.AggregationResult]() { agg =>
+      import agg._
+
+      Match($doc("u" -> user.id)) -> List(
+        GroupField("v")(
+          "nb" -> SumValue(1),
+          "points" -> Push(BSONString(f"$$s")),
+          "ratios" -> Push(BSONString(f"$$w"))))
+
+    }.collect[List](
+      -1, Cursor.FailOnError[List[ChartData.AggregationResult]]()).map { aggs =>
+      ChartData(aggs.flatMap { agg =>
+        PerfType.byId get agg._id map {
+          _ -> ChartData.PerfResult(
+            nb = agg.nb,
+            points = ChartData.Ints(agg.points),
+            rank = ChartData.Ints(agg.ratios))
         }
-      }
+      }.sortLike(PerfType.leaderboardable, _._1))
+    }
   }
 
   private def paginator(user: User, page: Int, sort: Bdoc): Fu[Paginator[TourEntry]] = Paginator(

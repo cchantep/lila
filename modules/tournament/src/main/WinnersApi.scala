@@ -51,7 +51,6 @@ final class WinnersApi(
     scheduler: lila.common.Scheduler) {
 
   import BSONHandlers._
-  import lila.db.BSON.MapDocument.MapHandler
   private implicit val WinnerHandler = reactivemongo.bson.Macros.handler[Winner]
   private implicit val FreqWinnersHandler = reactivemongo.bson.Macros.handler[FreqWinners]
   private implicit val AllWinnersHandler = reactivemongo.bson.Macros.handler[AllWinners]

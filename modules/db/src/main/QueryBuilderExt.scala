@@ -27,7 +27,7 @@ trait QueryBuilderExt { self: dsl =>
     // like one, but with stopOnError defaulting to false
     def uno[A: BSONDocumentReader]: Fu[Option[A]] = uno[A](ReadPreference.primary)
 
-    def uno[A: BSONDocumentReader](readPreference: ReadPreference): Fu[Option[A]] = b.copy(options = b.options.batchSize(1))
+    def uno[A: BSONDocumentReader](readPreference: ReadPreference): Fu[Option[A]] = b.batchSize(1)
       .cursor[A](readPreference = readPreference)
       .collect[Iterable](1, Cursor.ContOnError[Iterable[A]]())
       .map(_.headOption)

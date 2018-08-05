@@ -2,8 +2,10 @@ package lila.insight
 
 import org.joda.time.DateTime
 import play.api.libs.iteratee._
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
+
+import reactivemongo.api.Cursor
 import reactivemongo.bson._
+
 import scala.concurrent.duration._
 import scalaz.NonEmptyList
 
@@ -11,14 +13,16 @@ import lila.db.dsl._
 import lila.user.UserRepo
 import lila.rating.PerfType
 
-private final class Storage(coll: Coll) {
+private final class Storage(private[insight] val coll: Coll) {
 
   import Storage._
   import BSONHandlers._
   import Entry.{ BSONFields => F }
 
+  /*
   def aggregate(operators: NonEmptyList[PipelineOperator]): Fu[AggregationResult] =
     coll.aggregate(operators.head, operators.tail, allowDiskUse = true)
+   */
 
   def fetchFirst(userId: String): Fu[Option[Entry]] =
     coll.find(selectUserId(userId)).sort(sortChronological).uno[Entry]
@@ -31,9 +35,8 @@ private final class Storage(coll: Coll) {
 
   def insert(p: Entry) = coll.insert(p).void
 
-  def bulkInsert(ps: Seq[Entry]) = coll.bulkInsert(
-    documents = ps.map(BSONHandlers.EntryBSONHandler.write).toStream,
-    ordered = false)
+  def bulkInsert(ps: Seq[Entry]) =
+    coll.insert[Entry](ordered = false).many(ps)
 
   def update(p: Entry) = coll.update(selectId(p.id), p, upsert = true).void
 
@@ -46,16 +49,22 @@ private final class Storage(coll: Coll) {
   def ecos(userId: String): Fu[Set[String]] =
     coll.distinct[String, Set](F.eco, selectUserId(userId).some)
 
-  def nbByPerf(userId: String): Fu[Map[PerfType, Int]] = coll.aggregate(
-    Match(BSONDocument(F.userId -> userId)),
-    List(GroupField(F.perf)("nb" -> SumValue(1)))
-  ).map {
-      _.firstBatch.flatMap { doc =>
+  def nbByPerf(userId: String): Fu[Map[PerfType, Int]] =
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg.{ GroupField, Match, SumField, SumValue }
+
+      Match(BSONDocument(F.userId -> userId)) -> List(
+        GroupField(F.perf)("nb" -> SumValue(1)))
+
+    }.collect[List](-1, Cursor.FailOnError[List[BSONDocument]]()).map { ls =>
+      val m: Map[PerfType, Int] = ls.flatMap({ doc =>
         for {
           perfType <- doc.getAs[PerfType]("_id")
           nb <- doc.getAs[Int]("nb")
         } yield perfType -> nb
-      }.toMap
+      })(scala.collection.breakOut)
+
+      m
     }
 }
 

@@ -46,6 +46,7 @@ object BSON extends Handlers {
       def write(obj: T): Bdoc = handler write obj
     }
 
+  /*
   object MapDocument {
 
     implicit def MapReader[V](implicit vr: BSONDocumentReader[V]): BSONDocumentReader[Map[String, V]] = new BSONDocumentReader[Map[String, V]] {
@@ -102,22 +103,21 @@ object BSON extends Handlers {
       def write(map: Map[String, V]): Bdoc = writer write map
     }
   }
+   */
 
   final class Reader(val doc: BSONDocument) {
 
-    val map = {
-      // mutable optimized implementation
-      val b = collection.immutable.Map.newBuilder[String, BSONValue]
-      for (tuple <- doc.stream if tuple.isSuccess) b += (tuple.get._1 -> tuple.get._2)
-      b.result
-    }
+    val map = doc.toMap
 
     def get[A](k: String)(implicit reader: BSONReader[_ <: BSONValue, A]): A =
       reader.asInstanceOf[BSONReader[BSONValue, A]] read map(k)
+
     def getO[A](k: String)(implicit reader: BSONReader[_ <: BSONValue, A]): Option[A] =
       map get k flatMap reader.asInstanceOf[BSONReader[BSONValue, A]].readOpt
+
     def getD[A](k: String, default: A)(implicit reader: BSONReader[_ <: BSONValue, A]): A =
       getO[A](k) getOrElse default
+
     def getsD[A](k: String)(implicit reader: BSONReader[_ <: BSONValue, List[A]]) =
       getO[List[A]](k) getOrElse Nil
 
@@ -193,9 +193,8 @@ object BSON extends Handlers {
     case v              => v.toString
   }
   def debugArr(doc: Barr): String = doc.values.toList.map(debug).mkString("[", ", ", "]")
-  def debugDoc(doc: Bdoc): String = (doc.elements.toList map {
-    case (k, v) => s"$k: ${debug(v)}"
-  }).mkString("{", ", ", "}")
+
+  def debugDoc(doc: Bdoc): String = BSONDocument pretty doc
 
   def hashDoc(doc: Bdoc): String = debugDoc(doc).replace(" ", "")
 }

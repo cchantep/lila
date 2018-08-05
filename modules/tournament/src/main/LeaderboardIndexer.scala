@@ -16,10 +16,11 @@ private final class LeaderboardIndexer(
   import BSONHandlers._
 
   def generateAll: Funit = leaderboardColl.remove(BSONDocument()) >> {
+    import reactivemongo.play.iteratees.cursorProducer
+
     tournamentColl.find(TournamentRepo.finishedSelect)
       .sort(BSONDocument("startsAt" -> -1))
-      .cursor[Tournament]()
-      .enumerate(20 * 1000, stopOnError = true) &>
+      .cursor[Tournament]().enumerator(20000) &>
       Enumeratee.mapM[Tournament].apply[Seq[Entry]](generateTour) &>
       Enumeratee.mapConcat[Seq[Entry]].apply[Entry](identity) &>
       Enumeratee.grouped(Iteratee takeUpTo 500) |>>>
@@ -32,14 +33,12 @@ private final class LeaderboardIndexer(
   }.void
 
   def indexOne(tour: Tournament): Funit =
-    leaderboardColl.remove(BSONDocument("t" -> tour.id)) >>
-      generateTour(tour) flatMap saveEntries
+    leaderboardColl.delete(ordered = false).one(
+      BSONDocument("t" -> tour.id)) >> generateTour(tour) flatMap saveEntries
 
   private def saveEntries(entries: Seq[Entry]) =
-    entries.nonEmpty ?? leaderboardColl.bulkInsert(
-      documents = entries.map(BSONHandlers.leaderboardEntryHandler.write).toStream,
-      ordered = false
-    ).void
+    entries.nonEmpty ?? leaderboardColl.insert[Entry](
+      ordered = false).many(entries).void
 
   private def generateTour(tour: Tournament): Fu[List[Entry]] = for {
     nbGames <- PairingRepo.countByTourIdAndUserIds(tour.id)

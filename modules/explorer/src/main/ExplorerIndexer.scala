@@ -34,6 +34,8 @@ private final class ExplorerIndexer(
 
   type GamePGN = (Game, String)
 
+  import reactivemongo.play.iteratees.cursorProducer
+
   def apply(sinceStr: String): Funit =
     parseDate(sinceStr).fold(fufail[Unit](s"Invalid date $sinceStr")) { since =>
       logger.info(s"Start indexing since $since")
@@ -48,7 +50,7 @@ private final class ExplorerIndexer(
       gameColl.find(query)
         .sort(Query.sortChronological)
         .cursor[Game](ReadPreference.secondary)
-        .enumerate(maxGames, stopOnError = true) &>
+        .enumerator(maxGames) &>
         Enumeratee.mapM[Game].apply[Option[GamePGN]] { game =>
           makeFastPgn(game) map {
             _ map { game -> _ }

@@ -33,7 +33,7 @@ object ApplicationBuild extends Build {
       // offline := true,
       libraryDependencies ++= Seq(
         scalaz, scalalib, hasher, config, apache,
-        jgit, findbugs, RM, akka.actor, akka.slf4j,
+        jgit, findbugs, RM, rmNative, akka.actor, akka.slf4j,
         spray.caching, maxmind, prismic,
         kamon.core, kamon.statsd, java8compat, semver, scrimage),
       TwirlKeys.templateImports ++= Seq(
@@ -44,9 +44,7 @@ object ApplicationBuild extends Build {
         "lila.app.templating.Environment._",
         "lila.api.Context",
         "lila.common.paginator.Paginator"),
-      watchSources <<= sourceDirectory in Compile map { sources =>
-        (sources ** "*").get
-      },
+      watchSources :=  ((sourceDirectory in Compile).value ** "*").get,
       // trump sbt-web into not looking at public/
       resourceDirectory in Assets := (sourceDirectory in Compile).value / "assets"
     ))
@@ -68,7 +66,7 @@ object ApplicationBuild extends Build {
   lazy val api = project("api", moduleCPDeps)
     .settings(
       libraryDependencies ++= provided(
-        play.api, hasher, config, apache, jgit, findbugs, RM,
+        play.api, hasher, config, apache, jgit, findbugs, RM, rmIteratees,
         kamon.core, kamon.statsd)
     ) aggregate (moduleRefs: _*)
 
@@ -107,7 +105,7 @@ object ApplicationBuild extends Build {
   )
 
   lazy val blog = project("blog", Seq(common, memo, user, message)).settings(
-    libraryDependencies ++= provided(play.api, RM, prismic)
+    libraryDependencies ++= provided(play.api, RM, rmIteratees, prismic)
   )
 
   lazy val evaluation = project("evaluation", Seq(
@@ -175,7 +173,7 @@ object ApplicationBuild extends Build {
 
   lazy val gameSearch = project("gameSearch", Seq(common, hub, chess, search, game)).settings(
     libraryDependencies ++= provided(
-      play.api, RM))
+      play.api, RM, rmIteratees))
 
   lazy val tv = project("tv", Seq(common, db, hub, socket, game, user, chess)).settings(
     libraryDependencies ++= provided(play.api, RM, hasher)
@@ -188,7 +186,8 @@ object ApplicationBuild extends Build {
   lazy val round = project("round", Seq(
     common, db, memo, hub, socket, chess, game, user,
     i18n, fishnet, pref, chat, history, playban)).settings(
-    libraryDependencies ++= provided(play.api, RM, hasher, kamon.core)
+    libraryDependencies ++= provided(
+      play.api, RM, rmIteratees, hasher, kamon.core)
   )
 
   lazy val lobby = project("lobby", Seq(
@@ -208,12 +207,12 @@ object ApplicationBuild extends Build {
   lazy val insight = project("insight",
     Seq(common, chess, game, user, analyse, relation, pref, socket, round, security)
   ).settings(
-      libraryDependencies ++= provided(play.api, RM)
+      libraryDependencies ++= provided(play.api, RM, rmIteratees)
     )
 
   lazy val tournament = project("tournament", Seq(
     common, hub, socket, chess, game, round, security, chat, memo, quote, history, notifyModule)).settings(
-    libraryDependencies ++= provided(play.api, RM)
+    libraryDependencies ++= provided(play.api, RM, rmIteratees)
   )
 
   lazy val simul = project("simul", Seq(
@@ -242,7 +241,7 @@ object ApplicationBuild extends Build {
   )
 
   lazy val studySearch = project("studySearch", Seq(common, hub, study, search)).settings(
-    libraryDependencies ++= provided(play.api, RM)
+    libraryDependencies ++= provided(play.api, RM, rmIteratees)
   )
 
   lazy val learn = project("learn", Seq(common, db, user)).settings(
@@ -314,7 +313,7 @@ object ApplicationBuild extends Build {
   )
 
   lazy val explorer = project("explorer", Seq(common, db, game)).settings(
-    libraryDependencies ++= provided(play.api, RM)
+    libraryDependencies ++= provided(play.api, RM, rmIteratees)
   )
 
   lazy val notifyModule = project("notify", Seq(common, db, user, hub, relation)).settings(

@@ -30,13 +30,14 @@ final class HistoryApi(coll: Coll) {
       (isStd && game.speed == Speed.Classical).option("classical" -> perfs.classical),
       (isStd && game.speed == Speed.Correspondence).option("correspondence" -> perfs.correspondence)
     ).flatten.map {
-        case (k, p) => k -> p.intRating
-      }
+      case (k, p) => k -> p.intRating
+    }
+
     val days = daysBetween(user.createdAt, game.updatedAt | game.createdAt)
     coll.update(
       $id(user.id),
       $doc("$set" -> $doc(changes.map {
-        case (perf, rating) => s"$perf.$days" -> $int(rating)
+        case (perf, rating) => BSONElement(s"$perf.$days", $int(rating))
       })),
       upsert = true
     ).void

@@ -2,7 +2,9 @@ package lila.user
 
 import com.roundeights.hasher.Implicits._
 import org.joda.time.DateTime
+
 import reactivemongo.api._
+import reactivemongo.api.commands.GetLastError
 import reactivemongo.bson._
 
 import lila.common.ApiVersion
@@ -110,13 +112,16 @@ object UserRepo {
             doc.getAs[String]("_id") contains u1
           }
         }.addEffect { v =>
-          incColor(u1, v.fold(1, -1))
-          incColor(u2, v.fold(-1, 1))
-        }
+        incColor(u1, v.fold(1, -1))
+        incColor(u2, v.fold(-1, 1))
+
+        ()
+      }
     }
 
-  def incColor(userId: User.ID, value: Int): Unit =
-    coll.uncheckedUpdate($id(userId), $inc(F.colorIt -> value))
+  def incColor(userId: User.ID, value: Int) = coll.update(true).one(
+    q = $id(userId), u = $inc(F.colorIt -> value),
+    upsert = false, multi = false)
 
   val lichessId = "lichess"
   def lichess = byId(lichessId)
@@ -124,12 +129,16 @@ object UserRepo {
   def setPerfs(user: User, perfs: Perfs, prev: Perfs) = {
     val diff = PerfType.all flatMap { pt =>
       perfs(pt).nb != prev(pt).nb option {
-        s"${F.perfs}.${pt.key}" -> Perf.perfBSONHandler.write(perfs(pt))
+        BSONElement(s"${F.perfs}.${pt.key}",
+          value = Perf.perfBSONHandler.write(perfs(pt)))
       }
     }
-    diff.nonEmpty ?? coll.update(
-      $id(user.id),
-      $doc("$set" -> $doc(diff))
+
+    diff.nonEmpty ?? coll.update(true).one(
+      q = $id(user.id),
+      u = $doc("$set" -> $doc(diff)),
+      upsert = false,
+      multi = false
     ).void
   }
 
@@ -169,7 +178,7 @@ object UserRepo {
   val sortCreatedAtDesc = $sort desc F.createdAt
 
   def incNbGames(id: ID, rated: Boolean, ai: Boolean, result: Int, totalTime: Option[Int], tvTime: Option[Int]) = {
-    val incs: List[(String, BSONInteger)] = List(
+    val incs: List[BSONElement] = List(
       "count.game".some,
       rated option "count.rated",
       ai option "count.ai",
@@ -185,12 +194,13 @@ object UserRepo {
         case 0  => "count.drawH".some
         case _  => none
       }) ifFalse ai
-    ).flatten.map(_ -> BSONInteger(1)) ::: List(
-        totalTime map BSONInteger.apply map (s"${F.playTime}.total" -> _),
-        tvTime map BSONInteger.apply map (s"${F.playTime}.tv" -> _)
+    ).flatten.map(BSONElement(_, BSONInteger(1))) ::: List(
+        totalTime map BSONInteger.apply map[BSONElement] (s"${F.playTime}.total" -> _),
+        tvTime map BSONInteger.apply map[BSONElement] (s"${F.playTime}.tv" -> _)
       ).flatten
 
-    coll.update($id(id), $inc(incs))
+    coll.update(true).one(
+      q = $id(id), u = $inc(incs), upsert = false, multi = true)
   }
 
   def incToints(id: ID, nb: Int) = coll.update($id(id), $inc("toints" -> nb))
@@ -328,11 +338,16 @@ object UserRepo {
       _.flatMap(_.getAs[Bdoc](F.perfs)).flatMap(_.getAs[Perf](perfType.key))
     }
 
-  def setSeenAt(id: ID) {
-    coll.updateFieldUnchecked($id(id), "seenAt", DateTime.now)
+  def setSeenAt(id: ID): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(id), u = $set("seenAt" -> DateTime.now),
+      upsert = false, multi = false)
+
+    ()
   }
 
-  def recentlySeenNotKidIdsCursor(since: DateTime) =
+  def recentlySeenNotKidIdsCursor(since: DateTime)(
+    implicit cp: CursorProducer[Bdoc]): cp.ProducedCursor =
     coll.find($doc(
       F.enabled -> true,
       "seenAt" -> $doc("$gt" -> since),
@@ -343,11 +358,12 @@ object UserRepo {
   def setLang(id: ID, lang: String) = coll.updateField($id(id), "lang", lang).void
 
   def idsSumToints(ids: Iterable[String]): Fu[Int] =
-    ids.nonEmpty ?? coll.aggregate(
+    ids.nonEmpty ?? coll.aggregatorContext[BSONDocument](
       Match($inIds(ids)),
-      List(Group(BSONNull)(F.toints -> SumField(F.toints)))).map(
-        _.firstBatch.headOption flatMap { _.getAs[Int](F.toints) }
-      ).map(~_)
+      List(Group(BSONNull)(F.toints -> SumField(F.toints)))).
+      prepared.cursor.head.map {
+        _.getAs[Int](F.toints).fold(0)(~_)
+      }
 
   def filterByEngine(userIds: List[User.ID]): Fu[List[User.ID]] =
     coll.primitive[String]($inIds(userIds) ++ engineSelect(true), F.id)

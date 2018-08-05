@@ -10,7 +10,7 @@ object TopicRepo extends TopicRepo(false) {
 object TopicRepoTroll extends TopicRepo(true)
 
 sealed abstract class TopicRepo(troll: Boolean) {
-
+  import reactivemongo.api.commands.GetLastError
   import BSONHandlers.TopicBSONHandler
 
   // dirty
@@ -41,8 +41,13 @@ sealed abstract class TopicRepo(troll: Boolean) {
     }
   }
 
-  def incViews(topic: Topic) =
-    coll.incFieldUnchecked($id(topic.id), "views")
+  def incViews(topic: Topic): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).
+      one(q = $id(topic.id), u = $inc("views" -> 1),
+        upsert = false, multi = false)
+
+    ()
+  }
 
   def byCategQuery(categ: Categ) = $doc("categId" -> categ.slug) ++ trollFilter
 }

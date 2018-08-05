@@ -1,7 +1,8 @@
 package lila.insight
 
 import org.joda.time.DateTime
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
+
+import reactivemongo.api.Cursor
 import reactivemongo.bson._
 
 import lila.db.dsl._
@@ -19,7 +20,7 @@ final class InsightApi(
 
   def userCache(user: User): Fu[UserCache] = userCacheApi find user.id flatMap {
     case Some(c) => fuccess(c)
-    case None => for {
+    case _ => for {
       count <- storage count user.id
       ecos <- storage ecos user.id
       c = UserCache(user.id, count, ecos, DateTime.now)
@@ -27,14 +28,22 @@ final class InsightApi(
     } yield c
   }
 
-  def ask[X](question: Question[X], user: User): Fu[Answer[X]] =
-    storage.aggregate(pipeline(question, user.id)).flatMap { res =>
-      val clusters = AggregationClusters(question, res)
-      val gameIds = scala.util.Random.shuffle(clusters.flatMap(_.gameIds)) take 4
-      GameRepo.userPovsByGameIds(gameIds, user) map { povs =>
-        Answer(question, clusters, povs)
-      }
-    }.mon(_.insight.request.time) >>- lila.mon.insight.request.count()
+  def ask[X](question: Question[X], user: User): Fu[Answer[X]] = {
+    val aggPi = pipeline(question, user.id)
+
+    storage.coll.
+      aggregateWith[BSONDocument]() { _ => aggPi.head -> aggPi.tail }.
+      collect[List](
+        -1, Cursor.FailOnError[List[BSONDocument]]()).flatMap { res =>
+        val clusters = AggregationClusters(question, res)
+        val gameIds = scala.util.Random.shuffle(
+          clusters.flatMap(_.gameIds)) take 4
+
+        GameRepo.userPovsByGameIds(gameIds, user) map { povs =>
+          Answer(question, clusters, povs)
+        }
+      }.mon(_.insight.request.time) >>- lila.mon.insight.request.count()
+  }
 
   def userStatus(user: User): Fu[UserStatus] =
     GameRepo lastFinishedRatedNotFromPosition user flatMap {
@@ -63,8 +72,8 @@ final class InsightApi(
 }
 
 object InsightApi {
-
   sealed trait UserStatus
+
   object UserStatus {
     case object NoGame extends UserStatus
     case object Empty extends UserStatus

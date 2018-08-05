@@ -5,7 +5,7 @@ object BuildSettings {
 
   import Dependencies._
 
-  val globalScalaVersion = "2.11.8"
+  val globalScalaVersion = "2.11.12"
 
   def buildSettings = Defaults.defaultSettings ++ Seq(
     organization := "org.lichess",
@@ -43,8 +43,8 @@ object BuildSettings {
     "-Ybackend:GenBCode", "-Ydelambdafy:method", "-target:jvm-1.8")
 
   val srcMain = Seq(
-    scalaSource in Compile <<= (sourceDirectory in Compile)(identity),
-    scalaSource in Test <<= (sourceDirectory in Test)(identity)
+    scalaSource in Compile := (sourceDirectory in Compile).value,
+    scalaSource in Test := (sourceDirectory in Test).value
   )
 
   def projectToRef(p: Project): ProjectReference = LocalProject(p.id)

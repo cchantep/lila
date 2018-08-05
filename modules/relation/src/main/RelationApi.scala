@@ -11,7 +11,7 @@ import lila.memo.AsyncCache
 import lila.user.{ User => UserModel, UserRepo }
 
 import BSONHandlers._
-import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
+//import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
 import reactivemongo.bson._
 
 final class RelationApi(
@@ -35,17 +35,21 @@ final class RelationApi(
 
   def fetchBlocking = RelationRepo blocking _
 
-  def fetchFriends(userId: ID) = coll.aggregate(Match($doc(
-    "$or" -> $arr($doc("u1" -> userId), $doc("u2" -> userId)),
-    "r" -> Follow
-  )), List(
-    Group(BSONNull)(
-      "u1" -> AddToSet("u1"),
-      "u2" -> AddToSet("u2")),
-    Project($id($doc("$setIntersection" -> $arr("$u1", "$u2"))))
-  )).map {
-    ~_.firstBatch.headOption.flatMap(_.getAs[Set[String]]("_id")) - userId
-  }
+  def fetchFriends(userId: ID): Fu[Set[String]] =
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._ // aggregation stages
+
+      Match($doc(
+        "$or" -> $arr($doc("u1" -> userId), $doc("u2" -> userId)),
+        "r" -> Follow
+      )) -> List(
+        Group(BSONNull)(
+          "u1" -> AddToSet(BSONString(f"$$u1")),
+          "u2" -> AddToSet(BSONString(f"$$u2"))),
+        Project($id($doc("$setIntersection" -> $arr("$u1", "$u2")))))
+    }.head.map {
+      _.getAs[Set[String]]("_id").getOrElse(Set.empty[String]) - userId
+    }
 
   def fetchFollows(u1: ID, u2: ID) =
     coll.exists($doc("_id" -> makeId(u1, u2), "r" -> Follow))

@@ -5,6 +5,7 @@ import scala.concurrent.Future
 import org.joda.time.DateTime
 import play.api.mvc.RequestHeader
 import reactivemongo.bson.Macros
+import reactivemongo.api.commands.GetLastError
 
 import lila.common.{ HTTPRequest, ApiVersion }
 import lila.db.BSON.BSONJodaDateTimeHandler
@@ -55,8 +56,13 @@ object Store {
       userIdFingerprintProjection
     ).uno[UserIdAndFingerprint]
 
-  def setDateToNow(sessionId: String): Unit =
-    coll.updateFieldUnchecked($id(sessionId), "date", DateTime.now)
+  def setDateToNow(sessionId: String): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(sessionId), u = $set("date" -> DateTime.now),
+      upsert = false, multi = false)
+
+    ()
+  }
 
   def delete(sessionId: String): Funit =
     coll.update(
@@ -69,10 +75,10 @@ object Store {
       $set("up" -> false)).void
 
   def closeUserExceptSessionId(userId: String, sessionId: String): Funit =
-    coll.update(
-      $doc("user" -> userId, "_id" -> $ne(sessionId), "up" -> true),
-      $set("up" -> false),
-      multi = true).void
+    coll.update(true).one(
+      q = $doc("user" -> userId, "_id" -> $ne(sessionId), "up" -> true),
+      u = $set("up" -> false),
+      upsert = false, multi = true).void
 
   // useful when closing an account,
   // we want to logout too

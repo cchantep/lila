@@ -40,7 +40,7 @@ trait dsl {
   type BSONDocumentHandler[A] = BSONDocumentReader[A] with BSONDocumentWriter[A]
 
   implicit val LilaBSONDocumentZero: Zero[BSONDocument] =
-    Zero.instance($doc())
+    Zero.instance(BSONDocument.empty)
 
   implicit def bsonDocumentToPretty(document: BSONDocument): String = {
     BSONDocument.pretty(document)
@@ -116,7 +116,7 @@ trait dsl {
   }
 
   def $rename(item: (String, String), items: (String, String)*)(implicit writer: BSONWriter[String, _ <: BSONValue]): BSONDocument = {
-    $doc("$rename" -> $doc((Seq(item) ++ items).map(Producer.nameValue2Producer[String]): _*))
+    $doc("$rename" -> $doc((item +: items).map(implicitly[BSONElement](_))))
   }
 
   def $setOnInsert(item: Producer[BSONElement], items: Producer[BSONElement]*): BSONDocument = {
@@ -128,7 +128,8 @@ trait dsl {
   }
 
   def $unset(field: String, fields: String*): BSONDocument = {
-    $doc("$unset" -> $doc((Seq(field) ++ fields).map(_ -> BSONString(""))))
+    $doc("$unset" -> $doc((field +: fields).
+      map(BSONElement(_, BSONString(""))): _*))
   }
 
   def $min(item: Producer[BSONElement]): BSONDocument = {
@@ -184,8 +185,10 @@ trait dsl {
   }
 
   def $currentDate(items: (String, CurrentDateValueProducer[_])*): BSONDocument = {
-    $doc("$currentDate" -> $doc(items.map(item => item._1 -> item._2.produce)))
+    $doc("$currentDate" -> $doc(
+      items.map(item => BSONElement(item._1, item._2.produce))))
   }
+
   // End of Top Level Field Update Operators
   //**********************************************************************************************//
 
@@ -371,9 +374,11 @@ trait dsl {
     with LogicalOperators
     with ArrayOperators
 
+  /*
   implicit def toBSONElement[V <: BSONValue](expression: Expression[V])(implicit writer: BSONWriter[V, _ <: BSONValue]): Producer[BSONElement] = {
     expression.field -> expression.value
   }
+   */
 
   implicit def toBSONDocument[V <: BSONValue](expression: Expression[V])(implicit writer: BSONWriter[V, _ <: BSONValue]): BSONDocument =
     $doc(expression.field -> expression.value)

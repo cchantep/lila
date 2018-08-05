@@ -21,7 +21,8 @@ private final class UserCacheApi(coll: Coll) {
 
   def find(id: String) = coll.uno[UserCache]($id(id))
 
-  def save(u: UserCache) = coll.update($id(u.id), u, upsert = true).void
+  def save(u: UserCache) = coll.update(ordered = false).one(
+    q = $id(u.id), u = u, upsert = true, multi = false).void
 
-  def remove(id: String) = coll.remove($id(id)).void
+  def remove(id: String) = coll.delete[BSONDocument](false).one($id(id)).void
 }

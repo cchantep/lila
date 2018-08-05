@@ -99,8 +99,6 @@ object PlayerRepo {
   private def aggregationUserIdList(res: Stream[Bdoc]): List[String] =
     res.headOption flatMap { _.getAs[List[String]]("uids") } getOrElse Nil
 
-  import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework.{ Descending, Group, Match, Push, Sort }
-
   def userIds(tourId: String): Fu[List[String]] =
     coll.distinct[String, List]("uid", selectTour(tourId).some)
 
@@ -113,9 +111,13 @@ object PlayerRepo {
 
   // freaking expensive (marathons)
   private[tournament] def computeRanking(tourId: String): Fu[Ranking] =
-    coll.aggregate(Match(selectTour(tourId)), List(Sort(Descending("m")),
-      Group(BSONNull)("uids" -> Push("uid")))) map {
-      _.firstBatch.headOption.fold(Map.empty: Ranking) {
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._
+
+      Match(selectTour(tourId)) -> List(Sort(Descending("m")),
+        Group(BSONNull)("uids" -> Push(BSONString(f"$$uid"))))
+    }.headOption.map {
+      _.fold(Map.empty: Ranking) {
         _ get "uids" match {
           case Some(BSONArray(uids)) =>
             // mutable optimized implementation

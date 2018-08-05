@@ -5,8 +5,10 @@ import scala.util.Random
 import chess.format.{ Forsyth, FEN }
 import chess.{ Color, Status }
 import org.joda.time.DateTime
-import reactivemongo.api.ReadPreference
-import reactivemongo.bson.BSONBinary
+
+import reactivemongo.bson.{ BSONBinary, BSONDocument, BSONElement }
+import reactivemongo.api.{ Cursor, CursorProducer, ReadPreference }
+import reactivemongo.api.commands.GetLastError
 
 import lila.db.BSON.BSONJodaDateTimeHandler
 import lila.db.ByteArray
@@ -86,21 +88,23 @@ object GameRepo {
 
   def cursor(
     selector: Bdoc,
-    readPreference: ReadPreference = ReadPreference.secondaryPreferred) =
+    readPreference: ReadPreference = ReadPreference.secondaryPreferred)(
+    implicit cp: CursorProducer[Game]): cp.ProducedCursor =
     coll.find(selector).cursor[Game](readPreference)
 
   def sortedCursor(
     selector: Bdoc,
     sort: Bdoc,
-    readPreference: ReadPreference = ReadPreference.secondaryPreferred) =
+    readPreference: ReadPreference = ReadPreference.secondaryPreferred)(
+    implicit cp: CursorProducer[Game]): cp.ProducedCursor =
     coll.find(selector).sort(sort).cursor[Game](readPreference)
 
   def unrate(gameId: String) =
-    coll.update($id(gameId), $doc("$unset" -> $doc(
+    coll.update(false).one(q = $id(gameId), u = $doc("$unset" -> $doc(
       F.rated -> true,
       s"${F.whitePlayer}.${Player.BSONFields.ratingDiff}" -> true,
       s"${F.blackPlayer}.${Player.BSONFields.ratingDiff}" -> true
-    )))
+    )), upsert = false, multi = true)
 
   def goBerserk(pov: Pov): Funit =
     coll.update($id(pov.gameId), $set(
@@ -112,7 +116,9 @@ object GameRepo {
       case (Nil, Nil) => funit
       case (sets, unsets) => coll.update(
         $id(progress.origin.id),
-        nonEmptyMod("$set", $doc(sets)) ++ nonEmptyMod("$unset", $doc(unsets))
+        nonEmptyMod("$set", $doc(sets.map(
+          implicitly[BSONElement](_)))) ++ nonEmptyMod(
+          "$unset", $doc(unsets.map(implicitly[BSONElement](_))))
       ).void
     }
 
@@ -171,8 +177,12 @@ object GameRepo {
       Query.notFromPosition
   ).sort(Query.sortAntiChronological).uno[Game]
 
-  def setTv(id: ID) {
-    coll.updateFieldUnchecked($id(id), F.tvAt, DateTime.now)
+  def setTv(id: ID): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(id), u = $set(F.tvAt -> DateTime.now),
+      upsert = false, multi = false)
+
+    ()
   }
 
   def onTv(nb: Int): Fu[List[Game]] = coll.find($doc(F.tvAt $exists true))
@@ -180,11 +190,18 @@ object GameRepo {
     .cursor[Game]()
     .gather[List](nb)
 
-  def setAnalysed(id: ID) {
-    coll.updateFieldUnchecked($id(id), F.analysed, true)
+  def setAnalysed(id: ID): Unit = {
+    coll.update(true, GetLastError.Unacknowledged).one(
+      q = $id(id), u = $set(F.analysed -> true), upsert = false, multi = false)
+
+    ()
   }
-  def setUnanalysed(id: ID) {
-    coll.updateFieldUnchecked($id(id), F.analysed, false)
+
+  def setUnanalysed(id: ID): Unit = {
+    coll.update(true, GetLastError.Unacknowledged).one(
+      q = $id(id), u = $set(F.analysed -> false), upsert = false, multi = false)
+
+    ()
   }
 
   def isAnalysed(id: ID): Fu[Boolean] =
@@ -293,8 +310,12 @@ object GameRepo {
   def unsetCheckAt(g: Game) =
     coll.update($id(g.id), $doc("$unset" -> $doc(F.checkAt -> true)))
 
-  def unsetPlayingUids(g: Game): Unit =
-    coll.uncheckedUpdate($id(g.id), $unset(F.playingUids))
+  def unsetPlayingUids(g: Game): Unit = {
+    coll.update(false, GetLastError.Unacknowledged).one(
+      q = $id(g.id), u = $unset(F.playingUids), upsert = false, multi = false)
+
+    ()
+  }
 
   // used to make a compound sparse index
   def setImportCreatedAt(g: Game) =
@@ -352,26 +373,31 @@ object GameRepo {
     }).sequenceFu
 
   // #TODO expensive stuff, run on DB replica
-  // Can't be done on reactivemongo 0.11.9 :(
-  def bestOpponents(userId: String, limit: Int): Fu[List[(String, Int)]] = {
-    import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework._
-    coll.aggregate(Match($doc(F.playerUids -> userId)), List(
-      Match($doc(F.playerUids -> $doc("$size" -> 2))),
-      Sort(Descending(F.createdAt)),
-      Limit(1000), // only look in the last 1000 games
-      Project($doc(
-        F.playerUids -> true,
-        F.id -> false)),
-      Unwind(F.playerUids),
-      Match($doc(F.playerUids -> $doc("$ne" -> userId))),
-      GroupField(F.playerUids)("gs" -> SumValue(1)),
-      Sort(Descending("gs")),
-      Limit(limit))).map(_.firstBatch.flatMap { obj =>
-      obj.getAs[String]("_id") flatMap { id =>
-        obj.getAs[Int]("gs") map { id -> _ }
+  // Can't be done on reactivemongo 0.11.9 :( ???
+  def bestOpponents(userId: String, limit: Int): Fu[List[(String, Int)]] =
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._ // aggregation stages
+
+      Match($doc(F.playerUids -> userId)) -> List(
+        Match($doc(F.playerUids -> $doc("$size" -> 2))),
+        Sort(Descending(F.createdAt)),
+        Limit(1000), // only look in the last 1000 games
+        Project($doc(
+          F.playerUids -> true,
+          F.id -> false)),
+        UnwindField(F.playerUids),
+        Match($doc(F.playerUids -> $doc("$ne" -> userId))),
+        GroupField(F.playerUids)("gs" -> SumValue(1)),
+        Sort(Descending("gs")),
+        Limit(limit))
+    }.collect[List](limit, Cursor.FailOnError[List[BSONDocument]]()).map {
+      _.flatMap { obj =>
+        for {
+          id <- obj.getAs[String]("_id")
+          gs <- obj.getAs[Int]("gs")
+        } yield (id -> gs)
       }
-    })
-  }
+    }
 
   def random: Fu[Option[Game]] = coll.find($empty)
     .sort(Query.sortCreated)
@@ -422,34 +448,30 @@ object GameRepo {
       )
     ).uno[Bdoc] map { ~_.flatMap(_.getAs[List[String]](F.playerUids)) }
 
-  // #TODO this breaks it all since reactivemongo > 0.11.9
+  // #TODO this breaks it all since reactivemongo > 0.11.9 ???
   def activePlayersSinceNOPENOPENOPE(since: DateTime, max: Int): Fu[List[UidNb]] = {
-    import reactivemongo.api.collections.bson.BSONBatchCommands.AggregationFramework, AggregationFramework.{
-      Descending,
-      GroupField,
-      Limit,
-      Match,
-      Sort,
-      SumValue,
-      Unwind
-    }
+    coll.aggregateWith[BSONDocument]() { agg =>
+      import agg._ // aggregation stages
 
-    coll.aggregate(Match($doc(
-      F.createdAt $gt since,
-      F.status $gte chess.Status.Mate.id,
-      s"${F.playerUids}.0" $exists true
-    )), List(
-      Unwind(F.playerUids),
       Match($doc(
-        F.playerUids -> $doc("$ne" -> "")
-      )),
-      GroupField(F.playerUids)("nb" -> SumValue(1)),
-      Sort(Descending("nb")),
-      Limit(max))).map(_.firstBatch.flatMap { obj =>
-      obj.getAs[Int]("nb") map { nb =>
-        UidNb(~obj.getAs[String]("_id"), nb)
+        F.createdAt $gt since,
+        F.status $gte chess.Status.Mate.id,
+        s"${F.playerUids}.0" $exists true
+      )) -> List(
+        UnwindField(F.playerUids),
+        Match($doc(
+          F.playerUids -> $doc("$ne" -> "")
+        )),
+        GroupField(F.playerUids)("nb" -> SumValue(1)),
+        Sort(Descending("nb")),
+        Limit(max))
+    }.collect[List](max, Cursor.FailOnError[List[BSONDocument]]()).map {
+      _.flatMap { obj =>
+        obj.getAs[Int]("nb") map { nb =>
+          UidNb(~obj.getAs[String]("_id"), nb)
+        }
       }
-    })
+    }
   }
 
   private def extractPgnMoves(doc: Bdoc) =
